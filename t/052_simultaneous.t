@@ -21,7 +21,7 @@ use Parallel::Forker;
 my $iterations = 3;
 my $timeout = 8;
 
-plan tests => 12;
+plan tests => (3 * 3 * 2);
 
 my $data = [
         ["hostname", "0", "Plugin output"],
@@ -36,11 +36,11 @@ my $data = [
 	];
 
 
-my $Fork = Parallel::Forker->new;
-$SIG{CHLD} = sub { $Fork->sig_child; };
+my $Fork = Parallel::Forker->new( use_sig_child => 1 );
+$SIG{CHLD} = sub { Parallel::Forker::sig_child($Fork); };
 $SIG{TERM} = sub { $Fork->kill_tree_all('TERM') if $Fork; die "Quitting..."; };
 
-foreach my $config ('plain', 'encrypt'){
+foreach my $config ('plain', 'encrypt', 'digest'){
   foreach my $type ('--server_type=Single', '--server_type=Fork', '--server_type=PreFork') {
 	my $expected = [];
 	my $nsca = NSCATest->new( config => $config, timeout => $timeout );
@@ -53,14 +53,14 @@ foreach my $config ('plain', 'encrypt'){
 		push @$c, [ "host_$i", "service", 2, "Some unique data: ".rand() ];
 		push @$expected, @$c;
 		$Fork->schedule( 
-			run_on_start => sub { $nsca->send($c) },
+			run_on_start => sub { $nsca->child_spawned(1); $nsca->send($c) },
 			);
 	}
 
 	$Fork->ready_all;
 	$Fork->wait_all;
 
-	sleep 1;		# Need to wait for --daemon to finish processing
+	sleep 10;		# Need to wait for --daemon to finish processing
 
 	my $output = $nsca->read_cmd;
 

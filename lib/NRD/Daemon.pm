@@ -10,7 +10,7 @@ use NRD::Serialize;
 use NRD::Writer;
 
 use vars qw($VERSION);
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 use base qw/Net::Server::MultiType/;
 
@@ -21,8 +21,8 @@ sub _read_from_client {
     local $SIG{ALRM} = sub { alarm(0); die "timeout" };
     alarm $self->{'server'}->{'timeout'};
     $data = $self->{'oPacker'}->unpack( $self->{'server'}->{client} );
-    alarm(0);
   };
+  alarm(0);
   if ($@) {
     if ($@ =~ m/timeout/){
       $self->log(1, 'Client timeout');
@@ -60,14 +60,21 @@ sub process_request {
       $request = $serializer->unfreeze($request);
     };
     if ($@){
-      die "Couldn't unserialize a request: $@";
+      $self->log(1, "Couldn't unserialize a request: $@");
+      next;
     }
 
     my $command = lc($request->{command});
     if ($command eq "commit") {
-        $self->{'oWriter'}->commit;
-        # Confirmation of packet processing
-        print $packer->pack($serializer->freeze({'command'=>'finished'}));
+        eval {
+            $self->{'oWriter'}->commit
+        };
+        if ($@){
+            $self->log(1, "Couldn't commit: $@"); 
+        } else {
+            # Confirmation of packet processing
+            print $packer->pack($serializer->freeze({'command'=>'finished'}));
+        }
         last;
     } elsif ($command eq "result") {
         $self->process_result($request->{data});
@@ -119,6 +126,12 @@ sub options {
 
   $prop->{'encrypt_type'} ||= undef;
   $template->{'encrypt_type'} = \ $prop->{'encrypt_type'};
+
+  $prop->{'digest_key'} ||= undef;
+  $template->{'digest_key'} = \ $prop->{'digest_key'};
+
+  $prop->{'digest_type'} ||= undef;
+  $template->{'digest_type'} = \ $prop->{'digest_type'};
 
   $prop->{'alternate_dump_file'} ||= undef;
   $template->{'alternate_dump_file'} = \ $prop->{'alternate_dump_file'};
